@@ -9,25 +9,32 @@ import UIKit
 
 class HistoryViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return 10
+        return ScoreHelper.scoreHeplper.list.count
     }
-    
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "record", for: indexPath) as! ScrollTableViewCell
-        cell.numberLabel.text = String(1)
-        cell.dateLabel.text = String(2022/7/21)
-        cell.scoreLabel.text = String(222)
+        cell.updateUI(indexPath: indexPath)
         return cell
     }
+    @IBOutlet var historyTableView: UITableView!
     
+    var closure:(()->Void)?
     
     override func viewDidLoad() {
         super.viewDidLoad()
-
-        // Do any additional setup after loading the view.
+        historyTableView.delegate = self
+        historyTableView.dataSource = self
+        
     }
     
-
+    @IBAction func clearRocord(_ sender: Any) {
+        ScoreHelper.saveToFile(record: [])
+        ScoreHelper.scoreHeplper.list = []
+        self.historyTableView.reloadData()
+        
+        self.closure!()
+    }
+    
     /*
     // MARK: - Navigation
 

@@ -23,5 +23,9 @@ class ScrollTableViewCell: UITableViewCell {
 
         // Configure the view for the selected state
     }
-
+    func updateUI(indexPath: IndexPath) {
+        numberLabel.text = "\(indexPath.row+1)"
+        dateLabel.text = "\(ScoreHelper.scoreHeplper.orderList[indexPath.row].time)"
+        scoreLabel.text = "\(ScoreHelper.scoreHeplper.orderList[indexPath.row].score)"
+    }
 }

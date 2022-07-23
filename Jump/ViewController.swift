@@ -18,7 +18,6 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
     //记录所有方块
     private var boxNodes: [SCNNode] = []
     //记录分数
-    private var scoreList: [Int] = []
     private var highestScore = 0
     //定义锚点
     private var currentAnchor: ARAnchor?
@@ -55,14 +54,27 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
             }
         }
     }
+    
+    var bgmPlayer: AVAudioPlayer!
+    var pressPlayer: AVAudioPlayer!
+    var failPlayer: AVAudioPlayer!
+    var fallPlayer: AVAudioPlayer!
+    
     override func viewDidLoad() {
         super.viewDidLoad()
-        
         sceneView.delegate = self
         sceneView.showsStatistics = false
         sceneView.session.delegate = self
+        configurePlayers()
+
+        ScoreHelper.scoreHeplper.list = ScoreHelper.loadFromFile()
+        if ScoreHelper.scoreHeplper.list.isEmpty {
+            highestScore = 0
+        }else {
+            highestScore = ScoreHelper.scoreHeplper.orderList[0].score
+        }
+        self.higestLabel.text = "Highest:  \(highestScore)"
     }
-    
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         
@@ -70,9 +82,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
         //水平面检测
         configuration.planeDetection = .horizontal
         configuration.isLightEstimationEnabled = true
-
         sceneView.session.run(configuration)
-
         restartGame()
     }
     override func viewDidAppear(_ animated: Bool) {
@@ -119,10 +129,23 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
         //添加节点/记录方块
         sceneView.scene.rootNode.addChildNode(node)
         boxNodes.append(node)
-        boxnode1 = boxnode2
-        boxnode2 = boxNodes.last!
+    }
+    func configurePlayers() {
+        var url = Bundle.main.url(forResource: "failsound", withExtension: "mp3")!
+        failPlayer = try! AVAudioPlayer(contentsOf: url)
         
-}
+        url = Bundle.main.url(forResource: "fallsound", withExtension: "mp3")!
+        fallPlayer = try! AVAudioPlayer(contentsOf: url)
+        
+        url = Bundle.main.url(forResource: "presssound", withExtension: "mp3")!
+        pressPlayer = try! AVAudioPlayer(contentsOf: url)
+        
+        url = Bundle.main.url(forResource: "bgm", withExtension: "mp3")!
+        bgmPlayer = try! AVAudioPlayer(contentsOf: url)
+        bgmPlayer.numberOfLoops = -1
+        bgmPlayer.play()
+    }
+    
     //开始游戏
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard currentAnchor != nil && touchCanWork else {
@@ -143,6 +166,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
                     return nil
                 }
                 let results = sceneView.session.raycast(query)
+                guard !results.isEmpty else { return nil }
                 return SCNVector3.positionFromTransform(results[0].worldTransform)
             }
             
@@ -156,11 +180,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
                 boxnode2 = boxNodes.last!
             }
         } else {
+                pressPlayer.play()
                 //开始压缩动画
                 isTouched.toggle()
                 //记录开始时间
                 touchTimePair.begin = (event?.timestamp)!
-            touchCanWork.toggle()
+                touchCanWork.toggle()
         }
     }
     //结束
@@ -194,13 +219,22 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
                 //如果瓶子超出范围，则失败
                 if (self?.bottleNode.isNotContainedXZ(in: self!.boxnode1))! && (self?.bottleNode.isNotContainedXZ(in: self!.boxnode2))!{
                     //记录分数/提升失败/重新开始
-                    self?.scoreList.append(self!.score)
+                    let time = ScoreHelper.getTime()
+                    ScoreHelper.scoreHeplper.list.append(Statistic(score: self!.score, time: time))
+                    //本地存储
+                    let statistic = ScoreHelper.scoreHeplper.orderList
+                    ScoreHelper.saveToFile(record: statistic)
+                    self?.failPlayer.play()
                     self?.restartGame()
                 } else {
+                    self?.fallPlayer.play()
                     if (self?.bottleNode.isNotContainedXZ(in: self!.boxnode1))! {
                         //分数加1,继续进行
                         self?.score += 1
+                        //放置下一个箱子并相应更新安全区域
+                        self?.boxnode1 = self?.boxnode2
                         self?.generateBox(at: (self?.boxNodes.last!.position)!)
+                        self?.boxnode2 = self?.boxNodes.last!
                     }
                     self?.touchCanWork.toggle()
                 }
@@ -211,7 +245,6 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
     func renderer(_ renderer: SCNSceneRenderer, didAdd node: SCNNode, for anchor: ARAnchor) {
         if currentAnchor == nil {
             self.currentAnchor = anchor
-        }
             //光源
             let light = SCNLight()
             light.type = .directional
@@ -221,6 +254,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
             lightNode.eulerAngles = SCNVector3Make(-.pi / 3, .pi / 4, 0)
             lightNode.light = light
             self.sceneView.scene.rootNode.addChildNode(lightNode)
+        }
     }
     //随时间检测状态
     func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
@@ -230,21 +264,20 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
     }
   
     func session(_ session: ARSession, didFailWithError error: Error) {
-        // Present an error message to the user
-        
     }
     
     func sessionWasInterrupted(_ session: ARSession) {
-        // Inform the user that the session has been interrupted, for example, by presenting an overlay
-        
     }
     
     func sessionInterruptionEnded(_ session: ARSession) {
-        // Reset tracking and/or remove existing anchors if consistent tracking is required
-        
     }
     
-    @IBAction func history(_ sender: Any) {
-        
+    @IBSegueAction func history(_ coder: NSCoder) -> HistoryViewController? {
+        let historyViewController = HistoryViewController(coder: coder)
+        historyViewController!.closure = {
+            self.higestLabel.text = "Highest:  0"
+            self.highestScore = 0
+        }
+        return historyViewController
     }
 }
